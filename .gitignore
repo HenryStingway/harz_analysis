@@ -17,3 +17,6 @@ build/
 *.jpg
 *.png
 *.tif
+
+# weights
+*.pl
