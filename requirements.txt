@@ -1,0 +1,8 @@
+deepforest
+numpy
+pandas
+opencv-python
+pillow
+setuptools==66.1.1
+utm
+keplergl
