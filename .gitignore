@@ -1,0 +1,14 @@
+#Virtual envs
+venv*/
+venv/
+
+#Idea files
+**/.idea/
+*.iml
+.idea/
+__pycache__/
+
+*.egg-info/
+
+# build
+build/
