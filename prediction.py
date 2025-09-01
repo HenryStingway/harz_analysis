@@ -7,12 +7,47 @@ import numpy as np
 from PIL import Image
 import utm
 import geojson
+import os
+from pathlib import Path
 
+
+def image_standardization(image_path: str) -> str:
+    image = cv2.imread(image_path)
+
+    hue_standard = 80.0
+    sat_standard = 50.0
+    light_standard = 80.0
+
+    image_hls = cv2.cvtColor(image, cv2.COLOR_BGR2HLS).astype(np.float32)
+    (h, l, s) = cv2.split(image_hls)
+
+    # calc adjustments
+    h_mean = h.mean()
+    s_mean = s.mean()
+    l_mean = l.mean()
+    print(f'Source image: h_mean {h_mean}, l_mean {l_mean}, s_mean {s_mean}')
+    hue_adj = 1 - ((h_mean - hue_standard) / h_mean)
+    sat_adj = 1 - ((s_mean - sat_standard) / s_mean)
+    light_adj = 1 - ((l_mean - light_standard) / l_mean)
+
+    # adjust h, s, v
+    h = np.clip(h * hue_adj, 0, 255)
+    s = np.clip(s * sat_adj, 0, 255)
+    l = np.clip(l * light_adj, 0, 255)
+    print(f'Adjusted image: h_mean {h.mean()}, l_mean {l.mean()}, s_mean {s.mean()}')
+
+    image_hls = cv2.merge([h, l, s])
+
+    new_image_path = image_path.split('.')[0] + '.jpg'
+
+    cv2.imwrite(new_image_path, cv2.cvtColor(image_hls.astype('uint8'), cv2.COLOR_HLS2BGR))
+
+    return new_image_path
 
 def postprocess_tree_predictions(image_path: str, predictions_gdf: pd.DataFrame) -> pd.DataFrame:
     score_threshold = 0.2
     gray_img = cv2.cvtColor(cv2.imread(image_path), cv2.COLOR_BGR2GRAY)
-    gray_value_threshold = np.mean(gray_img)
+    gray_value_threshold = 105
     processed_predictions = []
 
     for prediction in (pbar := tqdm(predictions_gdf.values.tolist())):
@@ -59,18 +94,38 @@ def convert_predictions_to_utm_lat_lon_coords(predictions: pd.DataFrame, image_p
         coord_list.append([utm_east, utm_north, lat, lon, year])
         tree_point_list.append(geojson.Point((lat, lon)))
 
-    pd.DataFrame(coord_list, columns=['utm_east', 'utm_north', 'latitude', 'longitude', 'date']).to_csv(f'{image_name}.csv', index=False)
-    with open(f'{image_name}.geojson', 'w') as geojson_file:
+    pd.DataFrame(coord_list, columns=['utm_east', 'utm_north', 'latitude', 'longitude', 'date']).to_csv(
+        f'/home/debler/Projekte/harz_analysis/predicted_tree_locations/{image_name}.csv', index=False
+    )
+    with open(f'/home/debler/Projekte/harz_analysis/predicted_tree_locations/{image_name}.geojson', 'w') as geojson_file:
         geojson.dump(tree_point_list, geojson_file, indent=4)
 
 def check_if_image_jpg(image_path: str) -> str:
     if image_path.endswith('.jpg'):
         return image_path
+    elif image_path.split('/')[-1].replace('.tif','.jpg') in os.listdir(Path(image_path).parent):
+        return image_path.replace('.tif','.jpg')
     else:
         image = cv2.imread(image_path)
         new_image_path = image_path.split('.')[0]+'.jpg'
         cv2.imwrite(new_image_path, image)
         return new_image_path
+
+def join_annotation_csvs():
+    root_dir = '/home/debler/Projekte/harz_analysis/predicted_tree_locations'
+    csv_paths = []
+    for csv_name in os.listdir(root_dir):
+        if csv_name.split('.')[-1] == 'csv' and '2014' in csv_name:
+            csv_paths.append(os.path.join(root_dir, csv_name))
+
+    tree_location_data_list = []
+    for csv_path in csv_paths:
+        with open(csv_path,'r') as file:
+            tree_location_data_list.append(file.read().replace('utm_east,utm_north,latitude,longitude,date\n',''))
+
+    with open('/home/debler/Projekte/harz_analysis/predicted_tree_locations.csv', 'a') as file:
+        for tree_location_data in tree_location_data_list:
+            file.write(tree_location_data)
 
 def predict_tree_locations(path: str):
     #model = main.deepforest()
@@ -90,20 +145,14 @@ def predict_tree_locations(path: str):
 
     convert_predictions_to_utm_lat_lon_coords(predictions, path)
 
+# root_dir = '/home/debler/Projekte/s-a_ortho'
+# tile_paths = []
+# for tile_name in os.listdir(root_dir):
+#     if tile_name.split('.')[-1] == 'tif' and '2014' in tile_name:
+#         tile_paths.append(os.path.join(root_dir, tile_name))
+#
+# for path in tile_paths:
+#     predict_tree_locations(path)
 
-path_list = [
-    's-a_ortho/dop20rgbi_32_612_5736_2_st_2014.tif',
-    's-a_ortho/dop20rgbi_32_612_5736_2_st_2016.tif'
-]
-for path in path_list:
-    predict_tree_locations(path)
 
-
-# join predictions csv in predicted_tee_locations.csv
-with open('dop20rgbi_32_612_5736_2_st_2014.csv','r') as file:
-    tree_locations_2014 = file.read()
-with open('dop20rgbi_32_612_5736_2_st_2016.csv','r') as file:
-    tree_locations_2016 = file.read()
-with open('predicted_tree_locations.csv','a') as file:
-    file.write(tree_locations_2014)
-    file.write(tree_locations_2016)
+join_annotation_csvs()
