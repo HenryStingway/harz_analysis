@@ -1,6 +1,7 @@
 #Virtual envs
 venv*/
 venv/
+myenv/
 
 #Idea files
 **/.idea/
